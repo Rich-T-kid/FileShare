@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"os"
+	"time"
 )
 
 func main() {
@@ -14,26 +13,31 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		message := []byte("New messgge from the client!\n")
-		_, err = conn.Write(message)
-		if err != nil {
-			log.Fatal("Error writing to server:", err)
+		p := make([]byte, 256)
+		for {
+			n, err := conn.Read(p)
+			if err != nil {
+				break
+			}
+			fmt.Printf("read %d bytes\n", n)
+			fmt.Printf("from connection -> %s\n", p[:n])
+			time.Sleep(time.Second * 5)
 		}
-		defer conn.Close()
-		file, err := os.Open("clientFile.txt")
-		if err != nil {
-			fmt.Println("Error opening file:", err)
-			return
-		}
-		defer file.Close()
+		/*
+			file, err := os.Open("clientFile.txt")
+			if err != nil {
+				fmt.Println("Error opening file:", err)
+				return
+			}
+			defer file.Close()
 
-		// Copy the file content to the connection
-		_, err = io.Copy(conn, file)
-		if err != nil {
-			fmt.Println("Error copying data:", err)
-			return
-		}
-
+			// Copy the file content to the connection
+			_, err = io.Copy(conn, file)
+			if err != nil {
+				fmt.Println("Error copying data:", err)
+				return
+			}
+		*/
 		fmt.Println("File sent successfully")
 	}
 }

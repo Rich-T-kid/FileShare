@@ -1,0 +1,8 @@
+client 127.0.0.1:45430 wrote: The code above uses the os' package Open function to open the file, defers its Close function
+
+client 127.0.0.1:33020 wrote: The n oiled up beyodn belif rn
+
+client 127.0.0.1:41218 wrote: a thinking that thinks nothing but thought is left with nothing but thinkers
+
+client 127.0.0.1:52706 wrote: this is for the dogs and the dogs only yk
+

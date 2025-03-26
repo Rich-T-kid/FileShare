@@ -1,2 +1,0 @@
-New messgge from the client!
-The code above uses the os' package Open function to open the file, defers its Close function with the defer keyword, defines an empty lines slice, and uses the bufio's NewScanner function to read the file line-by-line while appending each line to the lines array in a text format using the Text function. Finally, it uses the printLastNLines function to get the last N lines of the lines array. N is any number of the user's choosing. In this case, it is 3, and the code uses a for loop to print each line with an horizontal line between each one.
