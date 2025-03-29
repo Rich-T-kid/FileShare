@@ -1,1 +1,6 @@
 .qodo
+.env
+*.MD
+_diskStorage
+fs_logs.txt
+/bin

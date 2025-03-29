@@ -9,7 +9,7 @@ import (
 
 func main() {
 	for i := 1; i < 2; i++ {
-		conn, err := net.Dial("tcp", "localhost:8000")
+		conn, err := net.Dial("tcp", "24.199.84.180:8000")
 		if err != nil {
 			log.Fatal(err)
 		}

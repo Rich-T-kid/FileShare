@@ -6,3 +6,35 @@ client 127.0.0.1:41218 wrote: a thinking that thinks nothing but thought is left
 
 client 127.0.0.1:52706 wrote: this is for the dogs and the dogs only yk
 
+client 127.0.0.1:35982 wrote: EndServer:44
+
+client 127.0.0.1:38742 wrote: EndServer:44
+
+client 127.0.0.1:50884 wrote: EndServer:44
+
+client 127.0.0.1:52270 wrote: EndServer:44
+
+client 127.0.0.1:51428 wrote: EndServer:44
+
+client 127.0.0.1:34310 wrote: EndServer:44
+
+client 127.0.0.1:47494 wrote: EndServer:4444
+
+client 127.0.0.1:40832 wrote: EndServer:434
+
+client 127.0.0.1:51506 wrote: EndServer:434
+
+client 127.0.0.1:60120 wrote: EndServer:434
+
+client 127.0.0.1:58826 wrote: EndServer:434
+
+client 127.0.0.1:54356 wrote: EndServer:434
+
+client 127.0.0.1:55048 wrote: EndServer:434
+
+client 127.0.0.1:52712 wrote: EndServer:4
+
+client 127.0.0.1:34424 wrote: EndServer:4
+
+client 127.0.0.1:33238 wrote: EndServer:4
+
