@@ -16,3 +16,11 @@ func ConcurentMaptoMap[T comparable, V any](src *sync.Map) map[T]V {
 	})
 	return result
 }
+
+func MaptoConcurentMap[T comparable, V any](src map[T]V) *sync.Map {
+	var result = &sync.Map{}
+	for k, v := range src {
+		result.Store(k, v)
+	}
+	return result
+}

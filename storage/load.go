@@ -11,6 +11,7 @@ import (
 type fileName string
 
 const (
+	Dir              fileName = "_diskStorage"
 	Connections      fileName = "ID:IP.json"
 	TotalConnections fileName = "connections.json"
 )
@@ -46,6 +47,9 @@ func (c connStroage) LoadFromDisk(fileName fileName, dest interface{}) error {
 	defer f.Close()
 	jbytes, _ := io.ReadAll(f)
 	err = json.Unmarshal(jbytes, dest)
+	if err == nil {
+		return err
+	}
 	return fmt.Errorf("json encoding error %w", err)
 
 }

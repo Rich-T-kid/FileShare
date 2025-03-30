@@ -2,5 +2,5 @@
 .env
 *.MD
 _diskStorage
-fs_logs.txt
+*log*
 /bin

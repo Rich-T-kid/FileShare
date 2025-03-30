@@ -38,3 +38,19 @@ client 127.0.0.1:34424 wrote: EndServer:4
 
 client 127.0.0.1:33238 wrote: EndServer:4
 
+client 127.0.0.1:38416 wrote: hello again
+
+client 127.0.0.1:48276 wrote: hello again
+
+client 127.0.0.1:34262 wrote: hello again
+
+client 127.0.0.1:54934 wrote: hello again
+
+client 127.0.0.1:59190 wrote: hello again
+
+client 127.0.0.1:53234 wrote: new message 
+
+client 127.0.0.1:34836 wrote: new message 
+
+client 127.0.0.1:59848 wrote: new message 
+
