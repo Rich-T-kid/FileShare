@@ -4,40 +4,29 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"time"
+	"os"
 )
 
 func main() {
-	for i := 1; i < 2; i++ {
-		conn, err := net.Dial("tcp", "24.199.84.180:8000")
-		if err != nil {
-			log.Fatal(err)
-		}
-		p := make([]byte, 256)
-		for {
-			n, err := conn.Read(p)
-			if err != nil {
-				break
-			}
-			fmt.Printf("read %d bytes\n", n)
-			fmt.Printf("from connection -> %s\n", p[:n])
-			time.Sleep(time.Second * 5)
-		}
-		/*
-			file, err := os.Open("clientFile.txt")
-			if err != nil {
-				fmt.Println("Error opening file:", err)
-				return
-			}
-			defer file.Close()
-
-			// Copy the file content to the connection
-			_, err = io.Copy(conn, file)
-			if err != nil {
-				fmt.Println("Error copying data:", err)
-				return
-			}
-		*/
-		fmt.Println("File sent successfully")
+	conn, err := net.Dial("tcp", "127.0.0.0:9999")
+	if err != nil {
+		log.Fatal(err)
 	}
+	f, _ := os.OpenFile("clientFile.txt", os.O_RDONLY, 0644)
+	//data := make([]byte, 1024)
+	//n, _ := f.Read(data)
+	msg := fmt.Sprintf("recieve: \n FileName:%s", f.Name()+"incom")
+	conn.Write([]byte(msg))
+	rd := make([]byte, 1024*4)
+	n, _ := conn.Read(rd)
+	fmt.Printf("server wrote %v\n", string(rd[:n]))
+	conn.Close()
+	/*
+	   var req = "recieve: \n FileName:clientFile.txt \n"
+	   n, _ := conn.Write([]byte(req))
+	   fmt.Printf("read %d bytes from connection", n)
+	   nb := make([]byte, 1024*4)
+	   n, _ = conn.Read(nb)
+	   fmt.Printf("server response (%d bytes) -> %v\n", n, string(nb[:n]))
+	*/
 }

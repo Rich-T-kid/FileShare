@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -27,8 +28,14 @@ func (s *Server) HandleConn(T string) (Handler, bool) {
 		fmt.Println("using client Handler")
 		return &Client{}, false
 	case "store:", "recieve:":
-		fmt.Println("using Users Handler")
-		return &User{}, false
+		fmt.Println(T)
+		if strings.HasPrefix(T, "store:") {
+			return &User{operation: "store"}, false
+		} else if strings.HasPrefix(T, "recieve:") {
+			return &User{operation: "recieve"}, false
+		} else {
+			return &User{}, false
+		}
 	case s._shutDownString:
 		return s, true
 	}

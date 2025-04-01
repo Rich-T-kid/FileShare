@@ -1,6 +1,9 @@
 package storage
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // useful transformations and data structures
 
@@ -14,6 +17,7 @@ func ConcurentMaptoMap[T comparable, V any](src *sync.Map) map[T]V {
 		}
 		return true
 	})
+	fmt.Println("New non concurent map ->", result)
 	return result
 }
 

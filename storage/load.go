@@ -12,8 +12,9 @@ type fileName string
 
 const (
 	Dir              fileName = "_diskStorage"
-	Connections      fileName = "ID:IP.json"
+	ConnectionsPairs fileName = "IP:ID.json"
 	TotalConnections fileName = "connections.json"
+	FileLocations    fileName = "file:Location.json"
 )
 
 type connStroage struct {

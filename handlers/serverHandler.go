@@ -16,9 +16,15 @@ import (
 )
 
 var (
-	id               int
-	connections_map  = &sync.Map{} // string:int
-	totalConnections = make([]string, 1)
+	id                int
+	connections_map   = &sync.Map{} // string:int
+	totalConnections  = make([]string, 1)
+	fileLocalLocation = make(map[string]string) // fileName : Path
+)
+
+const (
+	megaByte = 1024 * 1024 // 32 MB
+	kilobyte = 1024        // 1k
 )
 
 // Context key to avoid collision errors
@@ -29,8 +35,7 @@ func init() {
 	s := storage.NewStorage(string(storage.Dir))
 	conMap := make(map[string]int)
 	conSlice := make([]string, 1)
-	err := s.LoadFromDisk(storage.Connections, &conMap)
-	fmt.Println(conMap)
+	err := s.LoadFromDisk(storage.ConnectionsPairs, &conMap)
 	if err != nil {
 		fmt.Println(err)
 		panic(err)
@@ -39,9 +44,14 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	err = s.LoadFromDisk(storage.FileLocations, &fileLocalLocation)
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
 	connections_map = storage.MaptoConcurentMap(conMap)
 	totalConnections = conSlice
-	fmt.Println(connections_map, totalConnections)
+	fmt.Println(connections_map, totalConnections, fileLocalLocation)
 }
 
 type logMsg struct {
@@ -107,12 +117,14 @@ func (s *Server) MiddleWare(c net.Conn, shutdown chan<- string) {
 	reader := bufio.NewReader(c)
 	// Peek the first line
 	rawBytes, err := reader.ReadBytes('\n')
+	fmt.Println("first byes -> ", string(rawBytes))
 	if err != nil {
 		fmt.Println("error reading from conn:", err)
 		c.Close()
 		return
 	}
 	defer c.Close()
+	defer fmt.Println("Finished handling connection")
 	// trims \n  | store:\n -> store:
 	prefix := strings.TrimSpace(string(rawBytes))
 	handler, exit := s.HandleConn(prefix)
@@ -144,6 +156,7 @@ func (s *Server) HandleConnection(ctx context.Context, conn net.Conn) {
 		fmt.Println(err)
 		return
 	}
+	fmt.Println("Second bytes ", string(rawBytes))
 	logmsg := fmt.Sprintf("client %s wrote: %s\n", id, string(rawBytes))
 	s.logChan <- logMsg{
 		data: []byte(logmsg),
@@ -157,7 +170,6 @@ func (s *Server) HandleConnection(ctx context.Context, conn net.Conn) {
 		fmt.Printf("err: %v\n", err)
 	}
 	//unregisterClient(conn)
-	time.Sleep(time.Second * 1)
 
 }
 
@@ -175,7 +187,7 @@ func (s *Server) CronJobs(wg *sync.WaitGroup) {
 				fmt.Printf("errors updating persistance storage issues:%d   %v", i, errs[i])
 			}
 		}
-		time.Sleep(time.Second * 30)
+		time.Sleep(time.Second * 10)
 	}
 	fmt.Println("completed cron job ✔️")
 }
@@ -185,12 +197,17 @@ func (s *Server) CronJobs(wg *sync.WaitGroup) {
 func (s Server) UpdateDisk() []error {
 	var res []error
 	disk := storage.NewStorage("_diskStorage")
-	toMap := storage.ConcurentMaptoMap[int, string](connections_map)
-	err := disk.SaveToDisk(storage.Connections, &toMap)
+	toMap := storage.ConcurentMaptoMap[string, int](connections_map)
+	fmt.Println("b4 save", toMap)
+	err := disk.SaveToDisk(storage.ConnectionsPairs, &toMap)
 	if err != nil {
 		res = append(res, err)
 	}
 	err = disk.SaveToDisk(storage.TotalConnections, &totalConnections)
+	if err != nil {
+		res = append(res, err)
+	}
+	err = disk.SaveToDisk(storage.FileLocations, &fileLocalLocation)
 	if err != nil {
 		res = append(res, err)
 	}
