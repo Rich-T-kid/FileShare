@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -114,16 +113,15 @@ func (s *Server) handleListener(wg *sync.WaitGroup) {
 func (s *Server) MiddleWare(c net.Conn, shutdown chan<- string) {
 	defer logDuration(time.Now(), "HandleConnection")
 
+	defer c.Close()
 	reader := bufio.NewReader(c)
 	// Peek the first line
 	rawBytes, err := reader.ReadBytes('\n')
 	fmt.Println("first byes -> ", string(rawBytes))
 	if err != nil {
 		fmt.Println("error reading from conn:", err)
-		c.Close()
 		return
 	}
-	defer c.Close()
 	defer fmt.Println("Finished handling connection")
 	// trims \n  | store:\n -> store:
 	prefix := strings.TrimSpace(string(rawBytes))
@@ -145,31 +143,18 @@ func (s *Server) MiddleWare(c net.Conn, shutdown chan<- string) {
 	s.HandleConnection(ctx, c)
 }
 func (s *Server) HandleConnection(ctx context.Context, conn net.Conn) {
-	id := registerClient(conn)
 	reader, ok := ctx.Value(connReader{}).(*bufio.Reader)
 	if !ok {
-		conn.Write([]byte("Server has made a fatal error, Missing Buffer reader from middleware"))
+		conn.Write([]byte(ERRinternalServer("Missing Buffer reader from middleware").Error()))
 		return
 	}
+	// for now this is just an echo
 	rawBytes, err := reader.ReadBytes('\n')
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println("Second bytes ", string(rawBytes))
-	logmsg := fmt.Sprintf("client %s wrote: %s\n", id, string(rawBytes))
-	s.logChan <- logMsg{
-		data: []byte(logmsg),
-		name: id,
-	}
-	msg := fmt.Sprintf("Hello %v, you are now register in the file system \n", id)
-	var b bytes.Buffer
-	b.WriteString(msg)
-	_, err = b.WriteTo(conn)
-	if err != nil {
-		fmt.Printf("err: %v\n", err)
-	}
-	//unregisterClient(conn)
+	conn.Write(rawBytes)
 
 }
 
@@ -198,7 +183,6 @@ func (s Server) UpdateDisk() []error {
 	var res []error
 	disk := storage.NewStorage("_diskStorage")
 	toMap := storage.ConcurentMaptoMap[string, int](connections_map)
-	fmt.Println("b4 save", toMap)
 	err := disk.SaveToDisk(storage.ConnectionsPairs, &toMap)
 	if err != nil {
 		res = append(res, err)
@@ -215,14 +199,19 @@ func (s Server) UpdateDisk() []error {
 }
 
 func (s *Server) handleLogs() {
-	f, err := os.OpenFile("fs_logs.txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile("FileShare_logs.txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		panic(err)
 	}
 	defer f.Close()
+	defer close(s.logChan)
+	// allow client and storage handlers to use the same logger
+	// this is only for simplicity. if needed they can use their own logger later
+	go setexternalLog(s.logChan)
 	for s.running {
 		logMessage := <-s.logChan
 		fmt.Printf("%s sent %d bytes to be written to disk\n", logMessage.name, len(logMessage.data))
+		logMessage.data = append(logMessage.data, []byte("\n")...)
 		f.Write(logMessage.data)
 	}
 	fmt.Println("Finished writing logs to fs_logs.txt")
@@ -243,14 +232,4 @@ func NewServer(connectionStr string) *Server {
 		running:         true,
 		_shutDownString: os.Getenv("SERVER_SHUTDOWN_KEY"),
 	}
-}
-func registerClient(c net.Conn) string {
-	name := c.RemoteAddr().String()
-	totalConnections = append(totalConnections, name)
-	connections_map.Store(name, id)
-	return name
-}
-func unregisterClient(c net.Conn) {
-	name := c.RemoteAddr().String()
-	connections_map.Delete(name)
 }

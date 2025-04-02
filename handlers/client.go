@@ -34,7 +34,7 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 	// Two operations (Store , save file) (recieve, retrive file)
 	reader, ok := ctx.Value(connReader{}).(*bufio.Reader)
 	if !ok {
-		conn.Write([]byte("Server has made a fatal error, Missing Buffer reader from middleware"))
+		conn.Write([]byte(ERRinternalServer("Missing Buffer reader from middleware").Error()))
 		return
 	}
 	line, err := reader.ReadBytes('\n')
@@ -42,18 +42,17 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println("User handler operation ->", u.operation)
 	switch u.operation {
 	// good to go
 	case "store":
 		fmt.Println("line: ->", string(line))
 		fName, size, err := parseStore(line)
 		if err != nil {
-			conn.Write([]byte("Malformed request sent"))
-			fmt.Println("Error occured", err)
+			conn.Write([]byte(invalidRequest(string(line))))
+			writelog([]byte(err.Error()), "client store command failed")
 			return
 		}
-		fmt.Printf("user: %s , fileName:%s, size:%d\n", conn.RemoteAddr().String(), fName, size)
+		// in the future client should have to worry about this
 		exist := fileExist(fName)
 		if exist {
 			conn.Write([]byte(fmt.Sprintf("Cannot use file of name %s, its already taken \n", fName)))
@@ -63,13 +62,12 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 		buffer := make([]byte, min(size, megaByte*32))
 		n, err := reader.Read(buffer)
 		if err != nil {
-			fmt.Println(err)
+			writelog([]byte(err.Error()), "client store command failed")
 			return
 		}
-		fmt.Println(buffer[:n])
-		fmt.Printf("str format of byte array passed in by user %s ,  (%d bytes)\n", string(buffer[:n]), n)
 		err = storeFile(ctx, conn, fName, buffer[:n])
 		if err != nil {
+			writelog([]byte(fmt.Sprintf("error attempting to store %s to disk, error:%v", fName, err.Error())), "SERVER ERROR")
 			fmt.Println(err)
 			return
 		}
@@ -108,7 +106,6 @@ func storeFile(ctx context.Context, conn net.Conn, fileName string, content []by
 	path := fmt.Sprintf("%s/%s", downloadDir, fileName)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		fmt.Println("Opening file to store failed")
 		return err
 	}
 	_, err = f.Write(content)
@@ -178,7 +175,7 @@ func grabFileName(line []byte) (string, error) {
 	prefix := "FileName:"
 
 	if len(str) <= len(prefix) || !strings.HasPrefix(str, prefix) {
-		return "", fmt.Errorf("Format of input isn't correct or fileName is missing")
+		return "", fmt.Errorf("format of input isn't correct or fileName is missing")
 	}
 
 	return str[len(prefix):], nil

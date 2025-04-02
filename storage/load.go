@@ -37,7 +37,7 @@ func (c connStroage) SaveToDisk(fileName fileName, data interface{}) error {
 // The input data type must be a pointer
 func (c connStroage) LoadFromDisk(fileName fileName, dest interface{}) error {
 	path := fmt.Sprintf("%s/%s", c.directory, fileName)
-	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
+	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			fmt.Println("This should never happend. the caller should always pass in a valid file")
