@@ -19,6 +19,8 @@ var (
 	connections_map   = &sync.Map{} // string:int
 	totalConnections  = make([]string, 1)
 	fileLocalLocation = make(map[string]string) // fileName : Path
+	// Maps the generated file ID (that gets returned to external client) to usefull metadata about file
+	fileMetaInfoMap = make(map[string]*FileMeta)
 )
 
 const (
@@ -33,10 +35,14 @@ type connReader struct{}
 func init() {
 	s := storage.NewStorage(string(storage.Dir))
 	conMap := make(map[string]int)
+	metaDataMap := make(map[string]*FileMeta)
 	conSlice := make([]string, 1)
 	err := s.LoadFromDisk(storage.ConnectionsPairs, &conMap)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
+	}
+	err = s.LoadFromDisk(storage.FileMetaData, &metaDataMap)
+	if err != nil {
 		panic(err)
 	}
 	err = s.LoadFromDisk(storage.TotalConnections, &conSlice)
@@ -195,6 +201,10 @@ func (s Server) UpdateDisk() []error {
 	if err != nil {
 		res = append(res, err)
 	}
+	err = disk.SaveToDisk(storage.FileLocations, &fileMetaInfoMap)
+	if err != nil {
+		res = append(res, err)
+	}
 	return res
 }
 
@@ -232,4 +242,26 @@ func NewServer(connectionStr string) *Server {
 		running:         true,
 		_shutDownString: os.Getenv("SERVER_SHUTDOWN_KEY"),
 	}
+}
+
+// machines: array of possible machines that can store the data, use the connections.json list
+// data: byte slice that can be any data to be written over wire
+type IPADDR = string
+
+func splitToStorage(ctx context.Context, machines []string, data []byte) (map[IPADDR]int, []error) {
+	// somehow validate the machines
+	// choose n machines to split data amoungst. split the data into n evenly sized pieces
+	// write data/n to n machines, if any errors occure, continue and return a slice of errors to caller
+	// return the map of dataSplit:MachineIP
+	var e []error
+	m := make(map[IPADDR]int)
+	m["129.0.0.1"] = 210
+	return m, e
+}
+
+func recieveSplitStorage(ctx context.Context, fileInfo FileMeta, dest []byte) error { return nil }
+
+// split source by n Times, each split is as even as possible and is atmost off by 1
+func splitContent(src []byte, n uint8) [][]byte {
+	return nil
 }

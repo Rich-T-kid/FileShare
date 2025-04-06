@@ -15,10 +15,10 @@ import (
 All messages are Prefixes with C:
 (client,server) client -> server Response
 (request to become register for file sharing,Acknologment)
-C:/n State:Unregister -> OK
-C:/n State:Register -> OK
+c:/n State:Unregister\n -> OK
+c:/n State:Register\n -> OK
 (request polling to keep tcp connection,Acknologment)
-C:/n State:Polling -> OK
+c:/n State:Polling\n -> OK
 
 This is where the actual mapping for the storage servers will be held
 should move the  global variable to this file since its where it will be handled.
@@ -40,7 +40,6 @@ type Client struct {
 // repeat registrations have no affect
 // must be registered to unregister
 func (c Client) HandleConnection(ctx context.Context, conn net.Conn) {
-
 	reader, ok := ctx.Value(connReader{}).(*bufio.Reader)
 	if !ok {
 		conn.Write([]byte(ERRinternalServer("Missing Buffer reader from middleware").Error()))
@@ -48,7 +47,7 @@ func (c Client) HandleConnection(ctx context.Context, conn net.Conn) {
 	}
 	rawBytes, err := reader.ReadBytes('\n')
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("read Bytes error", err)
 		return
 	}
 	const prefix = "State:"
@@ -62,7 +61,7 @@ func (c Client) HandleConnection(ctx context.Context, conn net.Conn) {
 	switch command {
 	case Register:
 		id := registerClient(conn)
-		msg := fmt.Sprintf("hello %s you are now registered to store files, @ %v\n", id, time.Now().Format("Monday, 02-Jan-06 15:04:05 MS"))
+		msg := fmt.Sprintf("OK!\n%s you are now registered to store files, @ %v\n", id, time.Now().Format("Monday, 02-Jan-06 15:04:05 MS"))
 		conn.Write([]byte(msg))
 		return
 	case Unregister:
@@ -70,8 +69,10 @@ func (c Client) HandleConnection(ctx context.Context, conn net.Conn) {
 		if !exist {
 			conn.Write([]byte(invalidRequest(fmt.Sprintf("machine (%s) must already be registered to be unregistered\n", conn.RemoteAddr().String()))))
 		}
+		conn.Write([]byte("OK!\n You have succsufully unregistered"))
 	case Polling:
-		conn.Write([]byte("HeartBeat!\n"))
+		conn.Write([]byte("OK!\n"))
+
 	default:
 		conn.Write([]byte("Unsupported Command- No effect\n"))
 		return
@@ -92,15 +93,17 @@ func writelog(msg []byte, name string) {
 }
 
 func registerClient(c net.Conn) string {
-	name := c.RemoteAddr().String()
-	totalConnections = append(totalConnections, name)
+	ipAndport := c.RemoteAddr().String()
+	name := strings.Split(ipAndport, ":")
+	totalConnections = append(totalConnections, name[0])
 	connections_map.Store(name, id)
-	return name
+	return name[0]
 }
 func unregisterClient(c net.Conn) bool {
 	//curTime := time.Now().Unix()
 	//tempKey := strconv.FormatInt(curTime,10)
-	name := c.RemoteAddr().String()
+	ipAndport := c.RemoteAddr().String()
+	name := strings.Split(ipAndport, ":")
 	_, exist := connections_map.LoadAndDelete(name)
 
 	return exist

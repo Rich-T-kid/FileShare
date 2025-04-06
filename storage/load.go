@@ -12,9 +12,10 @@ type fileName string
 
 const (
 	Dir              fileName = "_diskStorage"
-	ConnectionsPairs fileName = "IP:ID.json"
+	ConnectionsPairs fileName = "ip:id.json"
 	TotalConnections fileName = "connections.json"
-	FileLocations    fileName = "file:Location.json"
+	FileLocations    fileName = "file:location.json"
+	FileMetaData     fileName = "fileId:filemeta.json"
 )
 
 type connStroage struct {
@@ -37,7 +38,7 @@ func (c connStroage) SaveToDisk(fileName fileName, data interface{}) error {
 // The input data type must be a pointer
 func (c connStroage) LoadFromDisk(fileName fileName, dest interface{}) error {
 	path := fmt.Sprintf("%s/%s", c.directory, fileName)
-	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0644)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			fmt.Println("This should never happend. the caller should always pass in a valid file")
@@ -47,6 +48,13 @@ func (c connStroage) LoadFromDisk(fileName fileName, dest interface{}) error {
 	}
 	defer f.Close()
 	jbytes, _ := io.ReadAll(f)
+	if len(jbytes) == 0 {
+		b, _ := json.Marshal(dest)
+		_, err := f.Write(b)
+		fmt.Println("Empty file and err ->", err)
+		return err
+
+	}
 	err = json.Unmarshal(jbytes, dest)
 	if err == nil {
 		return err

@@ -4,29 +4,60 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
+	"time"
 )
 
+func Register(c net.Conn) error {
+	msg := ":c\n State:Register\n"
+	c.Write([]byte(msg))
+
+	buff := make([]byte, 512)
+	n, err := c.Read(buff)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("read %d bytes from connection. Server: %v\n", n, string(buff[:n]))
+	return nil
+}
+func Unregister(c net.Conn) error {
+	msg := ":c\n State:Unregister\n"
+	c.Write([]byte(msg))
+
+	buff := make([]byte, 512)
+	n, err := c.Read(buff)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("read %d bytes from connection. Server: %v\n", n, string(buff[:n]))
+	return nil
+
+}
+func polling(c net.Conn) error {
+	msg := ":c\n State:Polling\n"
+	var count int
+	buff := make([]byte, 512)
+	c.Write([]byte(msg))
+	n, err := c.Read(buff)
+	if err != nil {
+		return fmt.Errorf("failed on iteration %d with error: %w", count, err)
+	}
+	fmt.Printf("read %d bytes from connection. Server: %v\n", n, string(buff[:n]))
+	return nil
+}
 func main() {
 	conn, err := net.Dial("tcp", "127.0.0.0:9999")
 	if err != nil {
 		log.Fatal(err)
 	}
-	f, _ := os.OpenFile("clientFile.txt", os.O_RDONLY, 0644)
-	//data := make([]byte, 1024)
-	//n, _ := f.Read(data)
-	msg := fmt.Sprintf("recieve: \n FileName:%s", f.Name()+"incom")
+	conn.SetReadDeadline(time.Now().Add(time.Second * 3))
+	conn.SetWriteDeadline(time.Now().Add(time.Second * 3))
+	//	err = Register(conn)
+	content := "This is just a lil thing i just cooked up"
+	msg := fmt.Sprintf("store:\nFileName:RichardFille size:%d\n %v", len(content), []byte(content))
+	fmt.Println("Writing", msg)
 	conn.Write([]byte(msg))
-	rd := make([]byte, 1024*4)
-	n, _ := conn.Read(rd)
-	fmt.Printf("server wrote %v\n", string(rd[:n]))
-	conn.Close()
-	/*
-	   var req = "recieve: \n FileName:clientFile.txt \n"
-	   n, _ := conn.Write([]byte(req))
-	   fmt.Printf("read %d bytes from connection", n)
-	   nb := make([]byte, 1024*4)
-	   n, _ = conn.Read(nb)
-	   fmt.Printf("server response (%d bytes) -> %v\n", n, string(nb[:n]))
-	*/
+	b := make([]byte, 212)
+	n, _ := conn.Read(b)
+	fmt.Printf("Server responded -> %v\n", string(b[:n]))
+
 }

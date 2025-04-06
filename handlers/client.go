@@ -5,14 +5,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"time"
+	//"github.com/google/uuid"
+	//"github.com/google/uuid"
 )
 
 const (
 	downloadDir = "FileDownloads"
+)
+
+var (
+	// this is to remove the chance of storing duplicates
+	// Maps hashID of file content to a  bool to show it alrady exist
+	ErrContentAlreadyExist = errors.New("Content already exist in this distributed file Server. No addition data was stored\n")
+	contentSet             = make(map[string]bool)
 )
 
 type User struct {
@@ -67,6 +78,11 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 		}
 		err = storeFile(ctx, conn, fName, buffer[:n])
 		if err != nil {
+			if errors.Is(err, ErrContentAlreadyExist) {
+				fmt.Printf("Recieved a duplicate store request, %v", err)
+				conn.Write([]byte("The content you are trying to store has already been stored on this distributed file server"))
+				return
+			}
 			writelog([]byte(fmt.Sprintf("error attempting to store %s to disk, error:%v", fName, err.Error())), "SERVER ERROR")
 			fmt.Println(err)
 			return
@@ -102,6 +118,21 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 // later well split files into chunks and then store to directory
 // then well handle sending it to other files later
 // for now keep everything on one server
+type FileMeta struct {
+	// Machine Ip address mapped to the file chunk number
+	// EX: 127.0.0.1:2 -> ip of 127.0.0.1 holds the second chunk of the file info
+	// len(machineMapping) = number of pieces, so this is how you can get an upper bound for the number of splits
+	MachienMapping map[IPADDR]int
+	// Orginal file name that was passed in by external client
+	OriginalFileName string
+	//Generated file uuid
+	HashFileName string
+	// Last time the file was stored or retrieved
+	LastEdited time.Time
+}
+
+// this should also check if the file contents already exist
+// IE doing a hash
 func storeFile(ctx context.Context, conn net.Conn, fileName string, content []byte) error {
 	path := fmt.Sprintf("%s/%s", downloadDir, fileName)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
@@ -109,6 +140,30 @@ func storeFile(ctx context.Context, conn net.Conn, fileName string, content []by
 		return err
 	}
 	_, err = f.Write(content)
+	fileLocalLocation[fileName] = path
+	// New stuff below
+	// This is where wed generate a fileID Hash here
+	fileHashID := hashBytes(content)
+	if contentSet[fileHashID] {
+		fmt.Println("Returning early since hash ID already exist")
+		// theres no need to continue of the file hash already be stored previously and exist within our distributed file server
+		return ErrContentAlreadyExist
+
+	}
+	machineMap, errors := splitToStorage(ctx, totalConnections, content)
+	if len(errors) != 0 {
+		return errors[0]
+	}
+	// Need to also Store metaData like , fileName, fileSize, fileHashID,ect hold this in a struct and these structs should hold the associated  mapping table, but the file UUID should be mapped to this struct
+	fInfo := &FileMeta{
+		MachienMapping:   machineMap,
+		OriginalFileName: fileName,
+		HashFileName:     fileHashID,
+		LastEdited:       time.Now().UTC(),
+	}
+	fileMetaInfoMap[fileHashID] = fInfo
+	fmt.Println(fileHashID, fInfo, "Now Stored together on disk")
+	contentSet[fileHashID] = true
 	fileLocalLocation[fileName] = path
 	return err
 }
@@ -184,6 +239,11 @@ func grabFileName(line []byte) (string, error) {
 func fileExist(fname string) bool {
 	_, ok := fileLocalLocation[fname]
 	return ok
+}
+func hashBytes(data []byte) string {
+	hasher := fnv.New64a()
+	hasher.Write(data)
+	return fmt.Sprintf("%x", hasher.Sum64())
 }
 
 // For simplicity for now just have one storageMachine hold one portion of a file
