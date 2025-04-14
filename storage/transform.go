@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -17,7 +16,6 @@ func ConcurentMaptoMap[T comparable, V any](src *sync.Map) map[T]V {
 		}
 		return true
 	})
-	fmt.Println("New non concurent map ->", result)
 	return result
 }
 

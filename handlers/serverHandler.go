@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -15,12 +16,11 @@ import (
 )
 
 var (
-	id                int
-	connections_map   = &sync.Map{} // string:int
-	totalConnections  = make([]string, 1)
-	fileLocalLocation = make(map[string]string) // fileName : Path
+	id               int
+	connections_map  = &sync.Map{}       // string:int -> Ip:ID.json
+	totalConnections = make([]string, 1) // -> Array_connections.json
 	// Maps the generated file ID (that gets returned to external client) to usefull metadata about file
-	fileMetaInfoMap = make(map[string]*FileMeta)
+	fileMetaInfoMap = make(map[string]*FileMeta) // FileID:filemeta.json
 )
 
 const (
@@ -35,13 +35,12 @@ type connReader struct{}
 func init() {
 	s := storage.NewStorage(string(storage.Dir))
 	conMap := make(map[string]int)
-	metaDataMap := make(map[string]*FileMeta)
 	conSlice := make([]string, 1)
 	err := s.LoadFromDisk(storage.ConnectionsPairs, &conMap)
 	if err != nil {
 		panic(err)
 	}
-	err = s.LoadFromDisk(storage.FileMetaData, &metaDataMap)
+	err = s.LoadFromDisk(storage.FileMetaData, &fileMetaInfoMap)
 	if err != nil {
 		panic(err)
 	}
@@ -49,14 +48,9 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	err = s.LoadFromDisk(storage.FileLocations, &fileLocalLocation)
-	if err != nil {
-		fmt.Println(err)
-		panic(err)
-	}
 	connections_map = storage.MaptoConcurentMap(conMap)
 	totalConnections = conSlice
-	fmt.Println(connections_map, totalConnections, fileLocalLocation)
+
 }
 
 type logMsg struct {
@@ -197,11 +191,7 @@ func (s Server) UpdateDisk() []error {
 	if err != nil {
 		res = append(res, err)
 	}
-	err = disk.SaveToDisk(storage.FileLocations, &fileLocalLocation)
-	if err != nil {
-		res = append(res, err)
-	}
-	err = disk.SaveToDisk(storage.FileLocations, &fileMetaInfoMap)
+	err = disk.SaveToDisk(storage.FileMetaData, &fileMetaInfoMap)
 	if err != nil {
 		res = append(res, err)
 	}
@@ -246,22 +236,197 @@ func NewServer(connectionStr string) *Server {
 
 // machines: array of possible machines that can store the data, use the connections.json list
 // data: byte slice that can be any data to be written over wire
-type IPADDR = string
+type IPADDR string
 
+// somehow validate the machines
+// choose n machines to split data amoungst. split the data into n evenly sized pieces
+// write data/n to n machines, if any errors occure, continue and return a slice of errors to caller
+// return the map of dataSplit:MachineIP
 func splitToStorage(ctx context.Context, machines []string, data []byte) (map[IPADDR]int, []error) {
-	// somehow validate the machines
-	// choose n machines to split data amoungst. split the data into n evenly sized pieces
-	// write data/n to n machines, if any errors occure, continue and return a slice of errors to caller
-	// return the map of dataSplit:MachineIP
 	var e []error
-	m := make(map[IPADDR]int)
-	m["129.0.0.1"] = 210
-	return m, e
+	var machineSplitMap = make(map[IPADDR]int)
+	machines = validMachines(machines)
+	if len(machines) == 0 {
+		e = append(e, fmt.Errorf("no valid machines to store data"))
+		return machineSplitMap, e
+	}
+	dataPartition := splitContent(data, uint8(len(machines)))
+	fileID := hashBytes(data)
+	for i := 0; i < len(dataPartition); i++ {
+		go transferFile(ctx, machines[i], dataPartition[i], fileID)
+		machineSplitMap[IPADDR(machines[i])] = i
+	}
+	return machineSplitMap, e
 }
-
-func recieveSplitStorage(ctx context.Context, fileInfo FileMeta, dest []byte) error { return nil }
 
 // split source by n Times, each split is as even as possible and is atmost off by 1
 func splitContent(src []byte, n uint8) [][]byte {
+	// Calculate the size of each split
+	splitSize := len(src) / int(n)
+	// Calculate the remaining bytes to distribute
+	remaining := len(src) % int(n)
+
+	var result [][]byte
+	start := 0
+
+	// Split the content into n parts
+	for i := 0; i < int(n); i++ {
+		// Calculate the end index for each part
+		end := start + splitSize
+		if remaining > 0 {
+			end++ // Distribute the remaining bytes
+			remaining--
+		}
+
+		// Append the split part
+		result = append(result, src[start:end])
+
+		// Move the start index for the next split
+		start = end
+	}
+
+	return result
+}
+
+// In perfect world this check all the passed in machines for a ping to make sure thier running
+func validMachines(machines []string) []string {
+	var validMachines []string
+	for _, machineIP := range machines {
+		// Change this to a ping check
+		if machineIP == "" {
+			continue
+		}
+		if pingMachine(machineIP) {
+			fmt.Printf("Machine %s is valid\n", machineIP)
+			validMachines = append(validMachines, machineIP)
+
+		}
+		//validMachines = append(validMachines, machineIP)
+	}
+
+	/*
+		var result []string
+		for _, machine := range machines {
+			if pingMachine(machine) {
+				result = append(result, machine)
+			}
+		}
+	*/
+	return validMachines
+}
+func pingMachine(ipAddr string) bool {
+	endpoint := ipAddr + ":9998"
+	conn, err := net.Dial("tcp", endpoint)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	conn.Write([]byte("ping"))
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return false
+	}
+	if n == 0 {
+		return false
+	}
+	return strings.TrimSpace(string(buf[:n])) == "pong"
+	// Simulate a ping to the machine
+	// In a real implementation, you would use a network library to check the machine's availability
+	// For example, you could use net.Dial to check if the machine is reachable
+}
+
+func transferFile(ctx context.Context, storageIPAddr string, fileBytes []byte, fileID string) {
+	const port = ":9997"
+	_, canclefunc := context.WithTimeout(ctx, time.Second*5)
+	defer canclefunc()
+	conn, err := net.Dial("tcp", net.JoinHostPort(storageIPAddr, "9997"))
+	if err != nil {
+		fmt.Printf("Error connecting to %s: %v\n", storageIPAddr, err)
+		return
+	}
+	defer conn.Close()
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	// Send the file bytes to the storage machine
+	conn.Write([]byte(fileID + "\n")) // Send file ID with newline
+	_, err = conn.Write(fileBytes)    // Send raw bytes
+	if err != nil {
+		fmt.Printf("Error sending data to %s: %v\n", storageIPAddr, err)
+		return
+	}
+	// Read the response from the storage machine
+	response := make([]byte, 1024)
+	_, err = conn.Read(response)
+	if err == io.EOF {
+		fmt.Printf("Finished Connection with %s\n", storageIPAddr)
+		return
+	}
+	if err != nil {
+		fmt.Printf("Error reading response from %s: %v\n", storageIPAddr, err)
+		return
+	}
+}
+
+// LOL this is going to be hell to implement
+
+// should handle all of the assembling of the split data as well. Write directly into the provided buffer
+// if for what ever reason if the assembled data isnt the same size as the original data, return an error
+func recieveSplitStorage(ctx context.Context, fileInfo FileMeta, dest []byte) error {
+	if len(fileInfo.MachienMapping) == 0 {
+		return fmt.Errorf("no machine mapping found")
+	}
+
+	// Step 1: Invert the map to get chunkIndex -> IP
+	indexToIP := make(map[int]string)
+	for ip, index := range fileInfo.MachienMapping {
+		indexToIP[index] = string(ip)
+	}
+
+	// Step 2: Prepare a slice to hold the chunks
+	chunkBuffers := make([][]byte, len(indexToIP))
+
+	// Step 3: Request each chunk by its index
+	for idx := 0; idx < len(indexToIP); idx++ {
+		ip, ok := indexToIP[idx]
+		if !ok {
+			return fmt.Errorf("missing chunk %d in metadata", idx)
+		}
+
+		address := net.JoinHostPort(ip, "9996")
+		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+		if err != nil {
+			return fmt.Errorf("failed to connect to %s: %w", address, err)
+		}
+
+		// Send request in format: "<fileID>:<chunkIndex>\n"
+		request := fmt.Sprintf("%s:%d\n", fileInfo.HashFileName, idx)
+		_, err = conn.Write([]byte(request))
+		if err != nil {
+			conn.Close()
+			return fmt.Errorf("failed to send chunk request: %w", err)
+		}
+
+		// Read chunk data
+		data, err := io.ReadAll(conn)
+		conn.Close()
+		if err != nil {
+			return fmt.Errorf("error reading chunk %d from %s: %w", idx, ip, err)
+		}
+
+		chunkBuffers[idx] = data
+	}
+
+	// Step 4: Reassemble the chunks into dest
+	offset := 0
+	for _, chunk := range chunkBuffers {
+		copy(dest[offset:], chunk)
+		offset += len(chunk)
+	}
+
+	if offset != fileInfo.TotSize {
+		return fmt.Errorf("expected assembled size %d, but got %d", fileInfo.TotSize, offset)
+	}
+
 	return nil
 }

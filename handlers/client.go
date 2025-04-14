@@ -22,8 +22,10 @@ const (
 var (
 	// this is to remove the chance of storing duplicates
 	// Maps hashID of file content to a  bool to show it alrady exist
-	ErrContentAlreadyExist = errors.New("Content already exist in this distributed file Server. No addition data was stored\n")
-	contentSet             = make(map[string]bool)
+	ErrContentAlreadyExist = func(fileID string) error {
+		return errors.New(fmt.Sprintf("Content already exist in this distributed file Server.FileID:%s , No addition data was stored\n", fileID))
+	} //errors.New("Content already exist in this distributed file Server. No addition data was stored\n")
+	// This is used to detect if contents of file already exist in the distributed file server IDeally this would point to the hashID of where the contents lie
 )
 
 type User struct {
@@ -55,20 +57,15 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 	}
 	switch u.operation {
 	// good to go
+	// The the API that this proviedes and is given this works 100%
 	case "store":
-		fmt.Println("line: ->", string(line))
 		fName, size, err := parseStore(line)
 		if err != nil {
 			conn.Write([]byte(invalidRequest(string(line))))
 			writelog([]byte(err.Error()), "client store command failed")
 			return
 		}
-		// in the future client should have to worry about this
-		exist := fileExist(fName)
-		if exist {
-			conn.Write([]byte(fmt.Sprintf("Cannot use file of name %s, its already taken \n", fName)))
-			return
-		}
+		// TODO: Remove this in a second. The caller shouldnt have to worry about this and the hashID of the content should be enough to remove duplicates
 		// at most only read in 32 MB's
 		buffer := make([]byte, min(size, megaByte*32))
 		n, err := reader.Read(buffer)
@@ -76,30 +73,30 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 			writelog([]byte(err.Error()), "client store command failed")
 			return
 		}
-		err = storeFile(ctx, conn, fName, buffer[:n])
-		if err != nil {
-			if errors.Is(err, ErrContentAlreadyExist) {
-				fmt.Printf("Recieved a duplicate store request, %v", err)
-				conn.Write([]byte("The content you are trying to store has already been stored on this distributed file server"))
-				return
-			}
-			writelog([]byte(fmt.Sprintf("error attempting to store %s to disk, error:%v", fName, err.Error())), "SERVER ERROR")
-			fmt.Println(err)
-			return
-		}
-		conn.Write([]byte(fmt.Sprintf("\nSuccsucfully wrote %d bytes to distributed file sever\n", n)))
-
-	case "recieve":
-		name, err := grabFileName(line)
+		// Should be a way to not have to compute the hash twice
+		err = checkDuplcateContent(buffer[:n])
 		if err != nil {
 			conn.Write([]byte(err.Error()))
 		}
-		exist := fileExist(name)
+		fileID, err := storeFile(ctx, conn, fName, buffer[:n])
+		if err != nil {
+			conn.Write([]byte("error -> " + err.Error()))
+			return
+		}
+		conn.Write([]byte(fmt.Sprintf("FileID:%s\nSuccsucfully wrote %d bytes to distributed file sever\n", fileID, n)))
+
+	case "recieve":
+		fileHashID, err := grabFileName(line)
+		if err != nil {
+			conn.Write([]byte(err.Error()))
+		}
+		// This needs to be changed to look for the fileID hash
+		exist := fileExist(fileHashID)
 		if !exist {
 			conn.Write([]byte("Cannot retrive a file that doesnt already exist. Please recheck file name spelling\n"))
 			return
 		}
-		content, err := retriveFile(ctx, conn, name)
+		content, err := retriveFile(ctx, conn, fileHashID)
 		if err != nil {
 			conn.Write([]byte(err.Error()))
 			return
@@ -118,56 +115,78 @@ func (u *User) HandleConnection(ctx context.Context, conn net.Conn) {
 // later well split files into chunks and then store to directory
 // then well handle sending it to other files later
 // for now keep everything on one server
+// FileMeta represents metadata about a file, including its chunks and other details.
 type FileMeta struct {
-	// Machine Ip address mapped to the file chunk number
+	// Machine IP address mapped to the file chunk number
 	// EX: 127.0.0.1:2 -> ip of 127.0.0.1 holds the second chunk of the file info
-	// len(machineMapping) = number of pieces, so this is how you can get an upper bound for the number of splits
-	MachienMapping map[IPADDR]int
-	// Orginal file name that was passed in by external client
-	OriginalFileName string
-	//Generated file uuid
-	HashFileName string
+	MachienMapping map[IPADDR]int `json:"MachienMapping"`
+
+	// Original file name that was passed in by external client
+	OriginalFileName string `json:"OriginalFileName"`
+
+	// Generated file UUID
+	HashFileName string `json:"HashFileName"`
+
 	// Last time the file was stored or retrieved
-	LastEdited time.Time
+	LastEdited time.Time `json:"LastEdited"`
+
+	// This is the size of the file in bytes
+	TotSize int `json:"TotSize"`
+
+	// Additional field to calculate the size of each piece
+
+	// len(map)/TotSize + 1 for each piece at most
+}
+
+func checkDuplcateContent(content []byte) error {
+	fileHashID := hashBytes(content)
+	_, ok := fileMetaInfoMap[fileHashID]
+	if ok {
+		v := fileMetaInfoMap[fileHashID]
+		// theres no need to continue of the file hash already be stored previously and exist within our distributed file server
+		return ErrContentAlreadyExist(v.HashFileName)
+
+	}
+	return nil
+
 }
 
 // this should also check if the file contents already exist
 // IE doing a hash
-func storeFile(ctx context.Context, conn net.Conn, fileName string, content []byte) error {
+func storeFile(ctx context.Context, conn net.Conn, fileName string, content []byte) (hashID string, e error) {
+	// TODO: For now keep writing it to local file storage, but once you have split logic
+	// move to writing to the storage machine
 	path := fmt.Sprintf("%s/%s", downloadDir, fileName)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return err
+		return "", err
 	}
 	_, err = f.Write(content)
-	fileLocalLocation[fileName] = path
 	// New stuff below
 	// This is where wed generate a fileID Hash here
 	fileHashID := hashBytes(content)
-	if contentSet[fileHashID] {
-		fmt.Println("Returning early since hash ID already exist")
-		// theres no need to continue of the file hash already be stored previously and exist within our distributed file server
-		return ErrContentAlreadyExist
-
-	}
+	// This is where the machines would be choosen. not imporant right now
 	machineMap, errors := splitToStorage(ctx, totalConnections, content)
 	if len(errors) != 0 {
-		return errors[0]
+		return "", errors[0]
 	}
-	// Need to also Store metaData like , fileName, fileSize, fileHashID,ect hold this in a struct and these structs should hold the associated  mapping table, but the file UUID should be mapped to this struct
 	fInfo := &FileMeta{
 		MachienMapping:   machineMap,
 		OriginalFileName: fileName,
 		HashFileName:     fileHashID,
 		LastEdited:       time.Now().UTC(),
+		TotSize:          len(content),
 	}
 	fileMetaInfoMap[fileHashID] = fInfo
-	fmt.Println(fileHashID, fInfo, "Now Stored together on disk")
-	contentSet[fileHashID] = true
-	fileLocalLocation[fileName] = path
-	return err
+	return fileHashID, err
 }
-func retriveFile(ctx context.Context, conn net.Conn, fileName string) ([]byte, error) {
+func retriveFile(ctx context.Context, conn net.Conn, fileHashID string) ([]byte, error) {
+	metaInfo := fileMetaInfoMap[fileHashID]
+	if metaInfo == nil {
+		return nil, fmt.Errorf("file with ID %s not found", fileHashID)
+	}
+	// For now since we havent actually sent data to over the wire
+	fileName := metaInfo.OriginalFileName
 	path := fmt.Sprintf("%s/%s", downloadDir, fileName)
 	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	if err != nil {
@@ -177,6 +196,16 @@ func retriveFile(ctx context.Context, conn net.Conn, fileName string) ([]byte, e
 			return nil, err
 		}
 	}
+	defer f.Close()
+	/* add after implementing the send and recieve logic
+	//adding an extra 100 bytes in the rare case that for what ever reason the totsize is too small.
+	buffer := make([]byte, metaInfo.TotSize+100)
+	err = recieveSplitStorage(ctx, *metaInfo, buffer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to gather and assemble file data: %w", err)
+	}
+	return buffer, nil
+	*/
 	fileInfo, err := f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
@@ -184,7 +213,6 @@ func retriveFile(ctx context.Context, conn net.Conn, fileName string) ([]byte, e
 
 	// ✅ File size in bytes
 	fileSize := fileInfo.Size()
-	fmt.Printf("File size: %d bytes\n", fileSize)
 	buffer := make([]byte, fileSize)
 	n, _ := f.Read(buffer)
 	return buffer[:n], nil
@@ -236,8 +264,12 @@ func grabFileName(line []byte) (string, error) {
 	return str[len(prefix):], nil
 }
 
-func fileExist(fname string) bool {
-	_, ok := fileLocalLocation[fname]
+func fileExist(fileHashID string) bool {
+	fileHashID = strings.TrimSpace(fileHashID)
+	//	fmt.Println("meta data", fileMetaInfoMap)
+	//	fmt.Printf("fileMetaInfoMap[%s] -> %+v\n", fileHashID, fileMetaInfoMap[fileHashID])
+
+	_, ok := fileMetaInfoMap[fileHashID]
 	return ok
 }
 func hashBytes(data []byte) string {

@@ -11,11 +11,13 @@ import (
 type fileName string
 
 const (
-	Dir              fileName = "_diskStorage"
+	Dir fileName = "_diskStorage"
+	// Represents ip addresss to id of storage machines that are currently connected
 	ConnectionsPairs fileName = "ip:id.json"
-	TotalConnections fileName = "connections.json"
-	FileLocations    fileName = "file:location.json"
-	FileMetaData     fileName = "fileId:filemeta.json"
+	// Represents array of all connections that have ever connected/ not neccearily still connected
+	TotalConnections fileName = "Array_connections.json"
+	// key value pairs of fileID to the files meta data such as file Mapping locations, size, originalName , ect
+	FileMetaData fileName = "fileID:filemeta.json"
 )
 
 type connStroage struct {
@@ -41,7 +43,7 @@ func (c connStroage) LoadFromDisk(fileName fileName, dest interface{}) error {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			fmt.Println("This should never happend. the caller should always pass in a valid file")
+			//fmt.Println("This should never happend. the caller should always pass in a valid file")
 			panic(err)
 		}
 		return fmt.Errorf("file system err %w", err)
@@ -51,7 +53,6 @@ func (c connStroage) LoadFromDisk(fileName fileName, dest interface{}) error {
 	if len(jbytes) == 0 {
 		b, _ := json.Marshal(dest)
 		_, err := f.Write(b)
-		fmt.Println("Empty file and err ->", err)
 		return err
 
 	}

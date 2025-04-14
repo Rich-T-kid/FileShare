@@ -96,7 +96,7 @@ func registerClient(c net.Conn) string {
 	ipAndport := c.RemoteAddr().String()
 	name := strings.Split(ipAndport, ":")
 	totalConnections = append(totalConnections, name[0])
-	connections_map.Store(name, id)
+	connections_map.Store(name[0], id)
 	return name[0]
 }
 func unregisterClient(c net.Conn) bool {
@@ -104,7 +104,7 @@ func unregisterClient(c net.Conn) bool {
 	//tempKey := strconv.FormatInt(curTime,10)
 	ipAndport := c.RemoteAddr().String()
 	name := strings.Split(ipAndport, ":")
-	_, exist := connections_map.LoadAndDelete(name)
+	_, exist := connections_map.LoadAndDelete(name[0])
 
 	return exist
 }
